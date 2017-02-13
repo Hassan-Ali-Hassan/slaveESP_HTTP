@@ -11,10 +11,14 @@
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
 #define USE_SERIAL Serial
-#define AGENT 1
+#define AGENT 2
 
 int numOfNeighbours = 0;
-String URL = "http://172.28.61.4/position?";
+//String URL = "http://172.28.61.16/position?status=3&";
+String URL = "http://172.28.61.16/";
+int status = 0; //a variable to give instructions to move or stop
+float t = 0;
+float oldTime = 0;
 int ownPosition[2] = {0,0};
 int neighbourPosition[4]; //the first two entries are the robot's own position, while the rest are of his neighbours
 ESP8266WiFiMulti WiFiMulti;
@@ -26,49 +30,62 @@ void setup()
     WiFiMulti.addAP("AeroStaff-4", "stewart2");
     #if AGENT == 1
     numOfNeighbours = 1;
-    URL += "p2=1&index=1&up=";
+//    URL += "p2=1&index=1&up=";
+    URL += "pos1?up=";
+    randomSeed(12);
     #elif AGENT == 2
     numOfNeighbours = 2;
-    URL += "p1=1&p3=1&index=2&up="
+//    URL += "p1=1&p3=1&index=2&up=";
+    URL += "pos2?up=";
+    randomSeed(34);
     #elif AGENT == 3
     numOfNeighbours = 1;
-    URL += "p2=1&index=3&up="
+//    URL += "p2=1&index=3&up=";
+    URL += "pos3?up=";
+    randomSeed(102);
     #endif
 }
 
 void loop() {
+    t = (float)millis()/1000.0;
     // wait for WiFi connection
-    if((WiFiMulti.run() == WL_CONNECTED)) {
+    if((WiFiMulti.run() == WL_CONNECTED)) 
+    {
 
         //check the serial port for any requests from master
         updateMasterUnit();
-        for(int j = 0; j < 2; j++){Serial.print(ownPosition[j]);Serial.print("\t");}
-        for(int j = 0; j < 4; j++){Serial.print(neighbourPosition[j]);Serial.print("\t");}
-        Serial.println();
-        // configure traged server and url
-        String URL_target = URL + String(ownPosition[0])+","+String(ownPosition[1]);
-//        Serial.println(URL_target);
-        http.begin(URL_target); //HTTP
-        
-        // start connection and send HTTP header
-        int httpCode = http.GET();
-
-        // httpCode will be negative on error
-        if(httpCode == HTTP_CODE_OK) 
+        if(t-oldTime > 0.1)
         {
-            String payload = http.getString();
-            parseData(payload);
-//            USE_SERIAL.println(payload);
+//              ownPosition[0] = random(100,200);
+//              ownPosition[1] = random(100,200);
+//              for(int j = 0; j < 2; j++){Serial.print(ownPosition[j]);Serial.print("\t");}
+//              for(int j = 0; j < 4; j++){Serial.print(neighbourPosition[j]);Serial.print("\t");}
+//              Serial.print(status);
+//              Serial.println();
+              // configure traged server and url
+              String URL_target = URL + String(ownPosition[0])+","+String(ownPosition[1]);
+      //        Serial.println(URL_target);
+              http.begin(URL_target); //HTTP
+              
+              // start connection and send HTTP header
+              int httpCode = http.GET();
+      
+              // httpCode will be negative on error
+              if(httpCode == HTTP_CODE_OK) 
+              {
+                  String payload = http.getString();
+                  parseData(payload);
+      //            USE_SERIAL.println(payload);
+              }
+              else 
+              {
+                  USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+              }
+      
+              http.end();
+              oldTime = t;
         }
-        else 
-        {
-            USE_SERIAL.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-        }
-
-        http.end();
     }
-
-    delay(200);
 }
 
 void updateMasterUnit()
@@ -110,14 +127,14 @@ void updateMasterUnit()
         outStr = outStr + ",";
       }
     }
-    outStr = outStr +"#";
+    outStr = outStr +"@"+String(status)+"#";
     USE_SERIAL.print(outStr);//sending to the master
   }
 }
 
 void parseData(String msg)
 {
-  const int bufferSize = 10;
+  const int bufferSize = 20;
   int index = 1;
   int i = 0;
   int L = msg.length();
@@ -145,6 +162,11 @@ void parseData(String msg)
     else if(buffer[i] == ',')
     {
       neighbourPosition[2*(index-1)] = auxBuffer.toInt();
+      auxBuffer = "";
+    }
+    else if(buffer[i] == '$')
+    {
+      status = auxBuffer.toInt();
       auxBuffer = "";
     }
     else
